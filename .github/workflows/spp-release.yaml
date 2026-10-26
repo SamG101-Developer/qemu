@@ -1,0 +1,89 @@
+# Build static qemu-user binaries from spp-patches for the CI of spp
+# and sppc, prove the fixes it carries, and on a tag ("spp-*")
+# publish them as one tarball with its sha256, for those to pin.
+# Run by hand, it builds and checks without publishing.
+
+name: Release
+
+on:
+  push:
+    tags: [ "spp-*" ]
+  workflow_dispatch:
+
+permissions: { }
+
+env:
+  TARGETS: >-
+    aarch64-linux-user aarch64_be-linux-user arm-linux-user i386-linux-user
+    loongarch64-linux-user m68k-linux-user mips-linux-user mipsel-linux-user
+    mips64el-linux-user ppc-linux-user ppc64-linux-user ppc64le-linux-user
+    riscv64-linux-user s390x-linux-user sparc64-linux-user x86_64-linux-user
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # A static build needs glib's (and pcre2's) archives; the cross
+      # compilers and their libc are for the checks only.
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential ninja-build python3-venv flex bison pkg-config \
+            libglib2.0-dev libpcre2-dev zlib1g-dev \
+            gcc-powerpc-linux-gnu libc6-dev-powerpc-cross \
+            gcc-14-loongarch64-linux-gnu libc6-dev-loong64-cross \
+            gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+
+      - name: Configure
+        run: |
+          mkdir build
+          cd build
+          ../configure --static --disable-system --enable-linux-user \
+            --disable-tools --disable-docs --disable-werror \
+            --target-list="${TARGETS// /,}"
+
+      - name: Build
+        run: make -C build -j"$(nproc)"
+
+      - name: Check the fixes
+        run: bash .github/spp/check-fixes.sh build
+
+      - name: Package
+        id: package
+        env:
+          REF: ${{ github.ref_name }}
+        run: |
+          name="qemu-user-static-${REF}-x86_64.tar.xz"
+          mkdir -p dist/bin
+          for t in $TARGETS; do cp "build/qemu-${t%-linux-user}" dist/bin/; done
+          tar -C dist -cJf "$name" bin
+          sha256sum "$name" | tee "$name.sha256"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          {
+            echo "Static qemu-user, built from \`spp-patches\` at $(git rev-parse --short HEAD):"
+            echo "qemu $(cat VERSION), on qemu master $(git rev-parse --short origin/master), with"
+            echo
+            git log --format='- %s' origin/master..HEAD
+            echo
+            echo "sha256: \`$(cut -d ' ' -f 1 "$name.sha256")\`"
+          } > notes.md
+          cat notes.md
+
+      - name: Publish
+        if: startsWith(github.ref, 'refs/tags/spp-')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref_name }}
+          NAME: ${{ steps.package.outputs.name }}
+        run: gh release create "$REF" "$NAME" "$NAME.sha256" --title "$REF" --notes-file notes.md --verify-tag
