@@ -7,13 +7,20 @@
 #include <string.h>
 #include <unistd.h>
 
+static void say(const char *s, size_t n) {
+    if (write(1, s, n) < 0) {
+        _exit(2);
+    }
+}
+
 static void handler(int sig, siginfo_t *si, void *uctx) {
     (void)si; (void)uctx;
     void *frames[32];
     char buf[64];
+    say("in handler\n", 11);
     int n = backtrace(frames, 32);
     int len = snprintf(buf, sizeof buf, "backtrace: %d frames\n", n);
-    write(1, buf, (size_t)len);
+    say(buf, (size_t)len);
     _exit(sig);
 }
 
