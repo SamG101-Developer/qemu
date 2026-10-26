@@ -81,7 +81,7 @@ endf	__kernel_sync_dicache
 #define sizeof_freg	8
 #define sizeof_vreg	16
 
-	.cfi_def_cfa	1, SIGNAL_FRAMESIZE + offsetof_rt_sigframe_mcontext
+	.cfi_def_cfa	1, SIGNAL_FRAMESIZE + RT_SIGFRAME_ADJUST + offsetof_rt_sigframe_mcontext
 
 	/* Return address */
 	.cfi_return_column 67
