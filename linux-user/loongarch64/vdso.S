@@ -48,7 +48,7 @@ vdso_syscall __vdso_getcpu, __NR_getcpu
 #define B_GR	offsetof_sigcontext_gr
 #define B_FR	sizeof_sigcontext + sizeof_sctx_info + offsetof_fpucontext_fr
 
-	.cfi_def_cfa	2, offsetof_sigcontext
+	.cfi_def_cfa	3, offsetof_sigcontext
 
 	/* Return address */
 	.cfi_return_column 64
