@@ -51,8 +51,8 @@ vdso_syscall __vdso_getcpu, __NR_getcpu
 	.cfi_def_cfa	3, offsetof_sigcontext
 
 	/* Return address */
-	.cfi_return_column 64
-	.cfi_offset	64, offsetof_sigcontext_pc	/* pc */
+	.cfi_return_column 72
+	.cfi_offset	72, offsetof_sigcontext_pc	/* pc */
 
 	/* Integer registers */
 	.cfi_offset	1, B_GR + 1 * 8
