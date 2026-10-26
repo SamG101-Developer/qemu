@@ -2,8 +2,10 @@
 # "master" fast-forwards from gitlab.com/qemu-project/qemu, and
 # "spp-patches" is rebased onto it. A patch qemu has taken drops
 # out by itself; one that no longer applies fails the job, and
-# nothing is pushed. Pushes use QEMU_SYNC_TOKEN, as the rebase can
-# carry changes to workflow files, which GITHUB_TOKEN may not push.
+# nothing is pushed. A rebase that moved the branch starts the
+# Release workflow, publishing, so a new release follows qemu each
+# week. Pushes use QEMU_SYNC_TOKEN, as the rebase can carry changes
+# to workflow files, which GITHUB_TOKEN may not push.
 
 name: Sync
 
@@ -25,6 +27,7 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+      actions: write
     steps:
       - name: Checkout spp-patches
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -42,6 +45,7 @@ jobs:
         run: git push origin refs/remotes/upstream/master:refs/heads/master
 
       - name: Rebase spp-patches
+        id: rebase
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -59,3 +63,10 @@ jobs:
             exit 0
           fi
           git push --force-with-lease="spp-patches:${old}" origin HEAD:spp-patches
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Release the rebased branch
+        if: steps.rebase.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run spp-release.yaml --ref spp-patches -f publish=true
