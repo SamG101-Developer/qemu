@@ -2665,7 +2665,7 @@ get_timeout:
                 return ret;
             }
             /* special case: destination address is NULL, return 0 */
-            if (optval_addr) {
+            if (!optval_addr) {
                 len = 0;
             }
             if (len == sizeof(struct target__kernel_sock_timeval)) {
