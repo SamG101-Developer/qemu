@@ -1,7 +1,10 @@
 # Build static qemu-user binaries from spp-patches for the CI of spp
-# and sppc, prove the fixes it carries, and on a tag ("spp-*")
-# publish them as one tarball with its sha256, for those to pin.
-# Run by hand, it builds and checks without publishing.
+# and sppc, prove the fixes it carries, and publish them as one
+# tarball with its sha256, for those to pin. A pushed "spp-*" tag is
+# released under its own name; run by hand with "publish" (as the
+# Sync workflow does after a rebase), it releases as spp-<UTC date>,
+# with ".2", ".3" for a second or third that day, tagging the commit
+# it built. By hand without "publish", it builds and checks only.
 
 name: Release
 
@@ -9,6 +12,11 @@ on:
   push:
     tags: [ "spp-*" ]
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish the build as a release (spp-<UTC date>)"
+        type: boolean
+        default: false
 
 permissions: { }
 
@@ -32,6 +40,26 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Name the release
+        id: name
+        env:
+          REF: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          if [ "$REF_TYPE" = tag ]; then
+            tag="$REF"
+          else
+            base="spp-$(date -u +%Y.%m.%d)"
+            tag="$base"
+            n=1
+            while git rev-parse -q --verify "refs/tags/${tag}" > /dev/null; do
+              n=$((n + 1))
+              tag="${base}.${n}"
+            done
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "Release name: ${tag}"
 
       # A static build needs glib's (and pcre2's) archives; the cross
       # compilers and their libc are for the checks only.
@@ -62,9 +90,9 @@ jobs:
       - name: Package
         id: package
         env:
-          REF: ${{ github.ref_name }}
+          TAG: ${{ steps.name.outputs.tag }}
         run: |
-          name="qemu-user-static-${REF}-x86_64.tar.xz"
+          name="qemu-user-static-${TAG}-x86_64.tar.xz"
           mkdir -p dist/bin
           for t in $TARGETS; do cp "build/qemu-${t%-linux-user}" dist/bin/; done
           tar -C dist -cJf "$name" bin
@@ -80,10 +108,15 @@ jobs:
           } > notes.md
           cat notes.md
 
+      # A pushed tag already exists; otherwise the release makes its tag,
+      # at the commit just built.
       - name: Publish
-        if: startsWith(github.ref, 'refs/tags/spp-')
+        if: github.ref_type == 'tag' || inputs.publish
         env:
           GH_TOKEN: ${{ github.token }}
-          REF: ${{ github.ref_name }}
+          TAG: ${{ steps.name.outputs.tag }}
           NAME: ${{ steps.package.outputs.name }}
-        run: gh release create "$REF" "$NAME" "$NAME.sha256" --title "$REF" --notes-file notes.md --verify-tag
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          if [ "$REF_TYPE" = tag ]; then where=(--verify-tag); else where=(--target "$GITHUB_SHA"); fi
+          gh release create "$TAG" "$NAME" "$NAME.sha256" --title "$TAG" --notes-file notes.md "${where[@]}"
