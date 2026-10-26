@@ -1,0 +1,61 @@
+# Keep this fork on qemu's own master, with our patches on top:
+# "master" fast-forwards from gitlab.com/qemu-project/qemu, and
+# "spp-patches" is rebased onto it. A patch qemu has taken drops
+# out by itself; one that no longer applies fails the job, and
+# nothing is pushed. Pushes use QEMU_SYNC_TOKEN, as the rebase can
+# carry changes to workflow files, which GITHUB_TOKEN may not push.
+
+name: Sync
+
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions: { }
+
+concurrency:
+  group: sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout spp-patches
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: spp-patches
+          fetch-depth: 0
+          token: ${{ secrets.QEMU_SYNC_TOKEN }}
+
+      - name: Fetch qemu master
+        run: git fetch --no-tags https://gitlab.com/qemu-project/qemu.git master:refs/remotes/upstream/master
+
+      # Not forced: if this fork's master ever holds anything of its
+      # own, the push is refused rather than losing it.
+      - name: Fast-forward master
+        run: git push origin refs/remotes/upstream/master:refs/heads/master
+
+      - name: Rebase spp-patches
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          old="$(git rev-parse HEAD)"
+          if ! git rebase upstream/master; then
+            stuck="$(git log -1 --format='%h %s' REBASE_HEAD 2>/dev/null || true)"
+            git rebase --abort
+            echo "::error::spp-patches no longer applies to qemu master at: ${stuck}"
+            exit 1
+          fi
+          echo "Carried on top of qemu master:"
+          git log --oneline upstream/master..HEAD
+          if [ "$(git rev-parse HEAD)" = "$old" ]; then
+            echo "Already on qemu master; nothing to push."
+            exit 0
+          fi
+          git push --force-with-lease="spp-patches:${old}" origin HEAD:spp-patches
