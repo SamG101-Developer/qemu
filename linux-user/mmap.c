@@ -207,6 +207,16 @@ int target_mprotect(abi_ulong start, abi_ulong len, int target_prot)
 
     mmap_lock();
 
+    /*
+     * Linux fails with ENOMEM where any page of the range is unmapped.
+     * The host cannot tell: under reserved_va an unmapped guest page is
+     * still a PROT_NONE host mapping, which mprotect accepts.
+     */
+    if (!page_check_range(start, len, PAGE_VALID)) {
+        ret = -TARGET_ENOMEM;
+        goto error;
+    }
+
     if (host_last - host_start < host_page_size) {
         /* Single host page contains all guest pages: sum the prot. */
         prot1 = target_prot;
