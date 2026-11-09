@@ -11229,6 +11229,14 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
         /* ??? msync/mlock/munlock are broken for softmmu.  */
 #ifdef TARGET_NR_msync
     case TARGET_NR_msync:
+        /*
+         * As for mprotect: an unmapped guest page may be a reserved host
+         * one, which msync accepts, where Linux fails with ENOMEM.
+         */
+        if (!(arg1 & ~TARGET_PAGE_MASK) &&
+            !page_check_range(arg1, TARGET_PAGE_ALIGN(arg2), PAGE_VALID)) {
+            return -TARGET_ENOMEM;
+        }
         return get_errno(msync(g2h(cpu, arg1), arg2,
                                target_to_host_msync_arg(arg3)));
 #endif
