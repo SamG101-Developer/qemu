@@ -11231,10 +11231,14 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
     case TARGET_NR_msync:
         /*
          * As for mprotect: an unmapped guest page may be a reserved host
-         * one, which msync accepts, where Linux fails with ENOMEM.
+         * one, which msync accepts, where Linux fails with ENOMEM.  The
+         * address and length are unsigned: as abi_long, a 32-bit guest's
+         * address above 2GB would sign-extend to one never mapped.
          */
-        if (!(arg1 & ~TARGET_PAGE_MASK) &&
-            !page_check_range(arg1, TARGET_PAGE_ALIGN(arg2), PAGE_VALID)) {
+        if (!((abi_ulong)arg1 & ~TARGET_PAGE_MASK) &&
+            !page_check_range((abi_ulong)arg1,
+                              TARGET_PAGE_ALIGN((abi_ulong)arg2),
+                              PAGE_VALID)) {
             return -TARGET_ENOMEM;
         }
         return get_errno(msync(g2h(cpu, arg1), arg2,
